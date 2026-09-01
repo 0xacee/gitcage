@@ -68,8 +68,8 @@ switch ($Command) {
             $audit | ConvertTo-Json -Depth 6
         } else {
             $audit.Results | Format-Table -AutoSize
-            Write-Host ''
-            Write-Host ("Isolation: {0} ({1} checks, {2} failures)" -f `
+            Write-Output ''
+            Write-Output ("Isolation: {0} ({1} checks, {2} failures)" -f `
                 $(if ($audit.Passed) { 'PASS' } else { 'FAIL' }),
                 $audit.CheckCount,
                 $audit.FailureCount)

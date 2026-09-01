@@ -151,7 +151,7 @@ function Get-GitCageAvailablePort {
     throw 'No free GitCage IDE port was found in the range 18100-18999.'
 }
 
-function Start-GitCageKeepAlive {
+function Initialize-GitCageKeepAlive {
     param([Parameter(Mandatory = $true)][object]$Metadata)
 
     $runtimeRoot = Join-Path (Initialize-GitCageState) 'runtime'
@@ -192,7 +192,7 @@ function Wait-GitCagePort {
                 return
             }
         } catch [System.Net.Sockets.SocketException] {
-            # The service has not bound the port yet.
+            $null = $_.Exception
         } finally {
             $client.Close()
         }
@@ -253,7 +253,7 @@ function Get-GitCage {
 }
 
 function New-GitCage {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory = $true)]
         [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
@@ -269,6 +269,9 @@ function New-GitCage {
     Assert-GitCageHost
     if ($Port -ne 0 -and $Port -lt 1024) {
         throw 'Custom IDE ports must be between 1024 and 65535.'
+    }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Create and provision a GitCage WSL2 distribution')) {
+        return
     }
     $stateRoot = Initialize-GitCageState
     $distroName = "GitCage-$Name"
@@ -292,7 +295,7 @@ function New-GitCage {
         }
 
         $installRoot = Join-Path (Join-Path $stateRoot 'distros') $distroName
-        Write-Host "Creating Debian WSL2 distribution '$distroName'..."
+        Write-Information "Creating Debian WSL2 distribution '$distroName'..." -InformationAction Continue
         & wsl.exe --install Debian --name $distroName --location $installRoot --version 2 --no-launch --web-download
         if ($LASTEXITCODE -ne 0) {
             throw "Could not create WSL distribution '$distroName'."
@@ -316,7 +319,7 @@ function New-GitCage {
 
     $provisionPath = Join-Path $script:ProjectRoot 'assets\provision.sh'
     $provisionScript = Get-Content -LiteralPath $provisionPath -Raw
-    Write-Host "Provisioning '$Name' with Git, GitHub CLI, and code-server..."
+    Write-Information "Provisioning '$Name' with Git, GitHub CLI, and code-server..." -InformationAction Continue
     $provisionScript | & wsl.exe --distribution $distroName --user root --exec bash -s -- $LinuxUser ([string]$Port)
     if ($LASTEXITCODE -ne 0) {
         throw "Provisioning failed for GitCage '$Name'."
@@ -330,7 +333,7 @@ function New-GitCage {
         throw "Could not restart WSL distribution '$distroName'."
     }
 
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
     Invoke-GitCageWsl -Distribution $distroName -User root `
         -ArgumentList @('systemctl', 'start', $script:ServiceName) | Out-Null
     Wait-GitCagePort -Port $Port
@@ -353,7 +356,7 @@ function Open-GitCage {
         throw "GitCage '$Name' does not exist."
     }
 
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
     Invoke-GitCageWsl -Distribution $metadata.distroName -User root `
         -ArgumentList @('systemctl', 'start', $script:ServiceName) | Out-Null
     Wait-GitCagePort -Port ([int]$metadata.port)
@@ -379,7 +382,7 @@ function Open-GitCage {
 }
 
 function Connect-GitCage {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory = $true)]
         [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
@@ -397,8 +400,11 @@ function Connect-GitCage {
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Authenticate and bind a GitHub identity')) {
+        return
+    }
 
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
     Invoke-GitCageWsl -Distribution $metadata.distroName -User root -ArgumentList @(
         'install', '-d', '-m', '0700',
         '-o', $metadata.linuxUser, '-g', $metadata.linuxUser,
@@ -410,7 +416,7 @@ function Connect-GitCage {
         Start-Process 'https://github.com/login/device'
     }
 
-    Write-Host 'Complete the GitHub device flow using the account dedicated to this cage.' -ForegroundColor Yellow
+    Write-Warning 'Complete the GitHub device flow using the account dedicated to this cage.'
     Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser -ArgumentList @(
         'env', 'BROWSER=/bin/true', 'gh', 'auth', 'login',
         '--hostname', 'github.com',
@@ -449,7 +455,7 @@ function Connect-GitCage {
 }
 
 function Copy-GitCageRepository {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory = $true)]
         [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
@@ -467,13 +473,16 @@ function Copy-GitCageRepository {
     if ([string]::IsNullOrWhiteSpace($metadata.expectedGitHub)) {
         throw "GitCage '$Name' is not connected to GitHub. Run the login command first."
     }
+    if (-not $PSCmdlet.ShouldProcess($Name, "Clone GitHub repository '$Repository'")) {
+        return
+    }
 
     $trimmedRepository = $Repository.TrimEnd('/')
     $repositoryName = ($trimmedRepository -split '/')[-1] -replace '\.git$', ''
     $target = "/home/$($metadata.linuxUser)/workspace/$repositoryName"
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
 
-    $existsCode = & wsl.exe --distribution $metadata.distroName --user $metadata.linuxUser `
+    & wsl.exe --distribution $metadata.distroName --user $metadata.linuxUser `
         --exec test -e $target
     if ($LASTEXITCODE -eq 0) {
         throw "Target '$target' already exists inside GitCage '$Name'."
@@ -506,7 +515,7 @@ function Test-GitCageIsolation {
         throw "GitCage '$Name' does not exist."
     }
 
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
     $auditPath = Join-Path $script:ProjectRoot 'assets\audit.sh'
     $auditScript = Get-Content -LiteralPath $auditPath -Raw
     $expectedGitHub = if ($null -eq $metadata.expectedGitHub) { '' } else { [string]$metadata.expectedGitHub }
@@ -544,7 +553,7 @@ function Test-GitCageIsolation {
 }
 
 function Stop-GitCage {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [Parameter(Mandatory = $true)]
         [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
@@ -554,6 +563,9 @@ function Stop-GitCage {
     $metadata = Read-GitCageMetadata -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
+    }
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Stop the WSL2 distribution')) {
+        return
     }
 
     & wsl.exe --terminate $metadata.distroName
@@ -566,7 +578,7 @@ function Stop-GitCage {
         Remove-Item -LiteralPath $pidPath -Force
     }
 
-    Write-Host "Stopped GitCage '$Name'."
+    Write-Information "Stopped GitCage '$Name'." -InformationAction Continue
 }
 
 function Invoke-GitCage {
@@ -586,7 +598,7 @@ function Invoke-GitCage {
         throw "GitCage '$Name' does not exist."
     }
 
-    Start-GitCageKeepAlive -Metadata $metadata
+    Initialize-GitCageKeepAlive -Metadata $metadata
     Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser `
         -ArgumentList $ArgumentList
 }
