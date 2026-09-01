@@ -1,0 +1,7 @@
+.gitcage/
+TestResults/
+*.trx
+*.clixml
+*.log
+.DS_Store
+Thumbs.db
