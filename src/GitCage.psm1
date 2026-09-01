@@ -43,7 +43,7 @@ function Get-GitCageMetadataPath {
     Join-Path (Join-Path (Get-GitCageStateRoot) 'cages') "$Name.json"
 }
 
-function Read-GitCageMetadata {
+function Read-GitCageRecord {
     param([Parameter(Mandatory = $true)][string]$Name)
 
     $path = Get-GitCageMetadataPath -Name $Name
@@ -54,7 +54,7 @@ function Read-GitCageMetadata {
     Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 }
 
-function Write-GitCageMetadata {
+function Write-GitCageRecord {
     param([Parameter(Mandatory = $true)][object]$Metadata)
 
     Initialize-GitCageState | Out-Null
@@ -214,7 +214,7 @@ function Get-GitCage {
     $runningDistributions = @(Get-GitCageRunningDistribution)
 
     if ($Name) {
-        $metadata = Read-GitCageMetadata -Name $Name
+        $metadata = Read-GitCageRecord -Name $Name
         if ($null -eq $metadata) {
             throw "GitCage '$Name' does not exist."
         }
@@ -275,7 +275,7 @@ function New-GitCage {
     }
     $stateRoot = Initialize-GitCageState
     $distroName = "GitCage-$Name"
-    $existingMetadata = Read-GitCageMetadata -Name $Name
+    $existingMetadata = Read-GitCageRecord -Name $Name
     $knownDistributions = @(Get-GitCageWslDistribution)
 
     if ($null -eq $existingMetadata -and $distroName -in $knownDistributions) {
@@ -314,7 +314,7 @@ function New-GitCage {
             createdAt = $now
             updatedAt = $now
         }
-        Write-GitCageMetadata -Metadata $metadata
+        Write-GitCageRecord -Metadata $metadata
     }
 
     $provisionPath = Join-Path $script:ProjectRoot 'assets\provision.sh'
@@ -326,7 +326,7 @@ function New-GitCage {
     }
 
     $metadata.stage = 'Ready'
-    Write-GitCageMetadata -Metadata $metadata
+    Write-GitCageRecord -Metadata $metadata
 
     & wsl.exe --terminate $distroName
     if ($LASTEXITCODE -ne 0) {
@@ -351,7 +351,7 @@ function Open-GitCage {
         [switch]$NoBrowser
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
@@ -396,7 +396,7 @@ function Connect-GitCage {
         [switch]$NoBrowser
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
@@ -443,7 +443,7 @@ function Connect-GitCage {
 
     $metadata.expectedGitHub = $login
     $metadata.stage = 'Authenticated'
-    Write-GitCageMetadata -Metadata $metadata
+    Write-GitCageRecord -Metadata $metadata
 
     [pscustomobject]@{
         Name = $Name
@@ -466,7 +466,7 @@ function Copy-GitCageRepository {
         [string]$Repository
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
@@ -510,7 +510,7 @@ function Test-GitCageIsolation {
         [string]$Name
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
@@ -560,7 +560,7 @@ function Stop-GitCage {
         [string]$Name
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }
@@ -593,7 +593,7 @@ function Invoke-GitCage {
         [string[]]$ArgumentList
     )
 
-    $metadata = Read-GitCageMetadata -Name $Name
+    $metadata = Read-GitCageRecord -Name $Name
     if ($null -eq $metadata) {
         throw "GitCage '$Name' does not exist."
     }

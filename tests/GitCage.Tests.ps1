@@ -86,8 +86,8 @@ Describe 'GitCage state and native output helpers' {
             updatedAt = $now
         }
 
-        & $script:GitCageModule { param($Value) Write-GitCageMetadata -Metadata $Value } $metadata
-        $actual = & $script:GitCageModule { Read-GitCageMetadata -Name 'work' }
+        & $script:GitCageModule { param($Value) Write-GitCageRecord -Metadata $Value } $metadata
+        $actual = & $script:GitCageModule { Read-GitCageRecord -Name 'work' }
 
         $actual.distroName | Should -Be 'GitCage-work'
         $actual.expectedGitHub | Should -Be 'octocat'
@@ -108,7 +108,7 @@ Describe 'GitCage state and native output helpers' {
             createdAt = $now
             updatedAt = $now
         }
-        & $script:GitCageModule { param($Value) Write-GitCageMetadata -Metadata $Value } $metadata
+        & $script:GitCageModule { param($Value) Write-GitCageRecord -Metadata $Value } $metadata
 
         (& $script:GitCageModule { Get-GitCageAvailablePort }) | Should -Not -Be 18100
     }
