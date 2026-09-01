@@ -8,11 +8,14 @@
     Description = 'Hermetic GitHub identity workspaces for Windows, powered by WSL2.'
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
+        'Connect-GitCage',
+        'Copy-GitCageRepository',
         'Get-GitCage',
         'Invoke-GitCage',
         'New-GitCage',
         'Open-GitCage',
-        'Stop-GitCage'
+        'Stop-GitCage',
+        'Test-GitCageIsolation'
     )
     CmdletsToExport = @()
     VariablesToExport = @()

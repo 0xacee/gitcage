@@ -71,6 +71,28 @@ function Get-GitCageWslDistribution {
     ConvertFrom-GitCageNativeOutput -Value $raw
 }
 
+function Get-GitCageWslText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Distribution,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+        [string]$User
+    )
+
+    $wslArguments = @('--distribution', $Distribution)
+    if ($User) {
+        $wslArguments += @('--user', $User)
+    }
+    $wslArguments += '--exec'
+    $wslArguments += $ArgumentList
+
+    $output = & wsl.exe @wslArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command in WSL distribution '$Distribution' failed with exit code $LASTEXITCODE."
+    }
+
+    ((ConvertFrom-GitCageNativeOutput -Value $output) -join "`n").Trim()
+}
+
 function Get-GitCageRunningDistribution {
     $raw = & wsl.exe --list --running --quiet
     if ($LASTEXITCODE -ne 0) {
@@ -356,6 +378,171 @@ function Open-GitCage {
     }
 }
 
+function Connect-GitCage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
+        [string]$Name,
+
+        [string]$GitName,
+
+        [ValidatePattern('^[^@\s]+@[^@\s]+$')]
+        [string]$GitEmail,
+
+        [switch]$NoBrowser
+    )
+
+    $metadata = Read-GitCageMetadata -Name $Name
+    if ($null -eq $metadata) {
+        throw "GitCage '$Name' does not exist."
+    }
+
+    Start-GitCageKeepAlive -Metadata $metadata
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User root -ArgumentList @(
+        'install', '-d', '-m', '0700',
+        '-o', $metadata.linuxUser, '-g', $metadata.linuxUser,
+        "/home/$($metadata.linuxUser)/.config",
+        "/home/$($metadata.linuxUser)/.config/gh"
+    )
+
+    if (-not $NoBrowser) {
+        Start-Process 'https://github.com/login/device'
+    }
+
+    Write-Host 'Complete the GitHub device flow using the account dedicated to this cage.' -ForegroundColor Yellow
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser -ArgumentList @(
+        'env', 'BROWSER=/bin/true', 'gh', 'auth', 'login',
+        '--hostname', 'github.com',
+        '--git-protocol', 'https',
+        '--web'
+    )
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser `
+        -ArgumentList @('gh', 'auth', 'setup-git')
+
+    $login = Get-GitCageWslText -Distribution $metadata.distroName -User $metadata.linuxUser `
+        -ArgumentList @('gh', 'api', 'user', '--jq', '.login')
+
+    if ([string]::IsNullOrWhiteSpace($GitName)) {
+        $GitName = $login
+    }
+    if ([string]::IsNullOrWhiteSpace($GitEmail)) {
+        $GitEmail = "$login@users.noreply.github.com"
+    }
+
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser `
+        -ArgumentList @('git', 'config', '--global', 'user.name', $GitName)
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser `
+        -ArgumentList @('git', 'config', '--global', 'user.email', $GitEmail)
+
+    $metadata.expectedGitHub = $login
+    $metadata.stage = 'Authenticated'
+    Write-GitCageMetadata -Metadata $metadata
+
+    [pscustomobject]@{
+        Name = $Name
+        GitHub = $login
+        GitName = $GitName
+        GitEmail = $GitEmail
+        CredentialStore = "/home/$($metadata.linuxUser)/.config/gh/hosts.yml"
+    }
+}
+
+function Copy-GitCageRepository {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^(https://github\.com/)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$')]
+        [string]$Repository
+    )
+
+    $metadata = Read-GitCageMetadata -Name $Name
+    if ($null -eq $metadata) {
+        throw "GitCage '$Name' does not exist."
+    }
+    if ([string]::IsNullOrWhiteSpace($metadata.expectedGitHub)) {
+        throw "GitCage '$Name' is not connected to GitHub. Run the login command first."
+    }
+
+    $trimmedRepository = $Repository.TrimEnd('/')
+    $repositoryName = ($trimmedRepository -split '/')[-1] -replace '\.git$', ''
+    $target = "/home/$($metadata.linuxUser)/workspace/$repositoryName"
+    Start-GitCageKeepAlive -Metadata $metadata
+
+    $existsCode = & wsl.exe --distribution $metadata.distroName --user $metadata.linuxUser `
+        --exec test -e $target
+    if ($LASTEXITCODE -eq 0) {
+        throw "Target '$target' already exists inside GitCage '$Name'."
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "Could not inspect '$target' inside GitCage '$Name'."
+    }
+
+    Invoke-GitCageWsl -Distribution $metadata.distroName -User $metadata.linuxUser `
+        -ArgumentList @('gh', 'repo', 'clone', $Repository, $target)
+
+    [pscustomobject]@{
+        Name = $Name
+        Repository = $Repository
+        Path = $target
+        GitHub = $metadata.expectedGitHub
+    }
+}
+
+function Test-GitCageIsolation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[a-z][a-z0-9-]{1,31}$')]
+        [string]$Name
+    )
+
+    $metadata = Read-GitCageMetadata -Name $Name
+    if ($null -eq $metadata) {
+        throw "GitCage '$Name' does not exist."
+    }
+
+    Start-GitCageKeepAlive -Metadata $metadata
+    $auditPath = Join-Path $script:ProjectRoot 'assets\audit.sh'
+    $auditScript = Get-Content -LiteralPath $auditPath -Raw
+    $expectedGitHub = if ($null -eq $metadata.expectedGitHub) { '' } else { [string]$metadata.expectedGitHub }
+
+    $raw = $auditScript | & wsl.exe --distribution $metadata.distroName `
+        --user $metadata.linuxUser --exec bash -s -- `
+        $metadata.linuxUser ([string]$metadata.port) $expectedGitHub
+    if ($LASTEXITCODE -ne 0) {
+        throw "Isolation audit could not run inside GitCage '$Name'."
+    }
+
+    $results = @(
+        ConvertFrom-GitCageNativeOutput -Value $raw | ForEach-Object {
+            $parts = $_ -split "`t", 3
+            if ($parts.Count -ne 3) {
+                throw "Isolation audit returned malformed output: $_"
+            }
+            [pscustomobject]@{
+                Check = $parts[0]
+                Status = $parts[1]
+                Detail = $parts[2]
+            }
+        }
+    )
+    $failureCount = @($results | Where-Object Status -eq 'FAIL').Count
+
+    [pscustomobject]@{
+        Name = $Name
+        Passed = $failureCount -eq 0
+        CheckCount = $results.Count
+        FailureCount = $failureCount
+        ExpectedGitHub = $expectedGitHub
+        Results = $results
+    }
+}
+
 function Stop-GitCage {
     [CmdletBinding()]
     param(
@@ -405,9 +592,12 @@ function Invoke-GitCage {
 }
 
 Export-ModuleMember -Function @(
+    'Connect-GitCage',
+    'Copy-GitCageRepository',
     'Get-GitCage',
     'Invoke-GitCage',
     'New-GitCage',
     'Open-GitCage',
-    'Stop-GitCage'
+    'Stop-GitCage',
+    'Test-GitCageIsolation'
 )
