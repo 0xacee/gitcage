@@ -1,0 +1,50 @@
+name: Bug report
+description: Report reproducible incorrect GitCage behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove tokens, device codes, passwords, personal paths, and private repository names.
+        Security boundary bypasses should use private vulnerability reporting instead.
+  - type: input
+    id: version
+    attributes:
+      label: GitCage version
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Windows and WSL versions
+      description: Use `wsl.exe --version`, with personal data removed.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest safe sequence of commands that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: audit
+    attributes:
+      label: Redacted audit output
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed all credentials, device codes, passwords, private repository names, and personal paths.
+          required: true

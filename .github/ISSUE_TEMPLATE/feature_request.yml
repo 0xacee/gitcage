@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a focused improvement to GitCage
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which identity-isolation or lifecycle problem is not solved today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe observable CLI behavior rather than only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Security-boundary impact
+      description: Does this add mounts, interop, credentials, networking, or destructive behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

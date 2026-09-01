@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">GitCage</title>
+  <desc id="desc">A branching path protected by a rounded cage</desc>
+  <defs>
+    <linearGradient id="frame" x1="18" y1="18" x2="110" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36d399"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="104" height="104" rx="25" fill="#0f172a" stroke="url(#frame)" stroke-width="8"/>
+  <path d="M42 87V42m0 19h25c13 0 19-7 19-19" fill="none" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="42" cy="40" r="9" fill="#36d399"/>
+  <circle cx="42" cy="88" r="9" fill="#3b82f6"/>
+  <circle cx="87" cy="40" r="9" fill="#f8fafc"/>
+  <path d="M26 25v78M64 16v96M102 25v78" stroke="url(#frame)" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+</svg>
